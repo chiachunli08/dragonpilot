@@ -26,6 +26,7 @@
 #include "opendbc/safety/modes/elm327.h"
 #include "opendbc/safety/modes/body.h"
 #include "opendbc/safety/modes/psa.h"
+#include "opendbc/safety/modes/volvo.h"
 
 #ifdef CANFD
 #include "opendbc/safety/modes/hyundai_canfd.h"
