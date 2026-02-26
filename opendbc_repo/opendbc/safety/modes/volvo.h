@@ -2,6 +2,10 @@
 
 #include "opendbc/safety/declarations.h"
 
+#define GET_BUS(msg) ((msg)->bus)
+#define GET_ADDR(msg) ((msg)->addr)
+#define GET_BYTE(msg, b) ((msg)->data[(b)])
+
 // Volvo Electronic Control Units abbreviations and network topology
 // Platforms C1/EUCD
 
@@ -62,9 +66,8 @@ static float volvo_interpolate(const float *bp, const float *v, int len, float x
 }
 
 static safety_config volvo_c1_init(uint16_t param) {
-  UNUSED(param);
+  SAFETY_UNUSED(param);
   controls_allowed = false;
-  relay_malfunction_reset();
   volvo_giraffe_forward_camera = 0;
   volvo_acc_active_prev = 0;
   volvo_acc_ped_val_prev = 0;
@@ -142,16 +145,12 @@ static void volvo_c1_rx_hook(const CANPacket_t *msg) {
         controls_allowed = false;
       }
       volvo_acc_ped_val_prev = acc_ped_val;
+      gas_pressed = acc_ped_val > 50;
     }
 
     // Don't forward if FSM0 message is on bus 0
     if (addr == MSG_VOLVO_C1_FSM0) {
       volvo_giraffe_forward_camera = 0;
-    }
-
-    // If LKA msg is on bus 0, then relay is unexpectedly closed
-    if ((safety_mode_cnt > RELAY_TRNS_TIMEOUT) && (addr == MSG_VOLVO_C1_FSM1)) {
-      relay_malfunction_set();
     }
   }
 }
@@ -183,8 +182,8 @@ static bool volvo_c1_tx_hook(const CANPacket_t *msg) {
       int lowest_desired_angle = volvo_desired_angle_last - ((volvo_desired_angle_last >= 0) ? delta_angle_down : delta_angle_up);
 
       // Max request offset from actual angle
-      int hi_angle_req = MIN(desired_angle + VOLVO_MAX_DELTA_OFFSET_ANGLE, VOLVO_MAX_ANGLE_REQ);
-      int lo_angle_req = MAX(desired_angle - VOLVO_MAX_DELTA_OFFSET_ANGLE, VOLVO_MIN_ANGLE_REQ);
+      int hi_angle_req = SAFETY_MIN(angle_meas.max + VOLVO_MAX_DELTA_OFFSET_ANGLE, VOLVO_MAX_ANGLE_REQ);
+      int lo_angle_req = SAFETY_MAX(angle_meas.min - VOLVO_MAX_DELTA_OFFSET_ANGLE, VOLVO_MIN_ANGLE_REQ);
 
       // Check for violation
       if (desired_angle > highest_desired_angle) violation = true;
@@ -192,7 +191,12 @@ static bool volvo_c1_tx_hook(const CANPacket_t *msg) {
       if (desired_angle > hi_angle_req) violation = true;
       if (desired_angle < lo_angle_req) violation = true;
     }
-    volvo_desired_angle_last = desired_angle;
+
+    if (controls_allowed && lka_active) {
+      volvo_desired_angle_last = desired_angle;
+    } else {
+      volvo_desired_angle_last = angle_meas.values[0];
+    }
 
     // Desired steer angle should be the same as measured when controls off
     if (!controls_allowed && lka_active) {
@@ -217,25 +221,25 @@ static bool volvo_c1_tx_hook(const CANPacket_t *msg) {
   return tx;
 }
 
-static int volvo_c1_fwd_hook(int bus_num, int addr) {
-  int bus_fwd = -1;  // fallback to do not forward
+static bool volvo_c1_fwd_hook(int bus_num, int addr) {
+  bool block = false;
 
-  if (!relay_malfunction && volvo_giraffe_forward_camera) {
+  if (volvo_giraffe_forward_camera) {
     if (bus_num == VOLVO_MAIN) {
-      bool block_msg = (addr == MSG_VOLVO_C1_PSCM1);
-      if (!block_msg) {
-        bus_fwd = VOLVO_CAM;  // forward 0 -> 2
+      if (addr == MSG_VOLVO_C1_PSCM1) {
+        block = true;
       }
     }
 
     if (bus_num == VOLVO_CAM) {
-      bool block_msg = (addr == MSG_VOLVO_C1_FSM1);  // block if lkas msg
-      if (!block_msg) {
-        bus_fwd = VOLVO_MAIN;  // forward 2 -> 0
+      if (addr == MSG_VOLVO_C1_FSM1) {  // block if lkas msg
+        block = true;
       }
     }
+  } else {
+    block = true;
   }
-  return bus_fwd;
+  return block;
 }
 
 const safety_hooks volvo_c1_hooks = {
