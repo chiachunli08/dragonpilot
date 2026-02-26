@@ -19,7 +19,7 @@ class CarInterface(CarInterfaceBase):
 
     # C1 platform (V40) - Community supported
     if ret.flags & VolvoFlags.C1:
-      ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.noOutput)]
+      ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.volvoC1)]
       
       # V40 specific parameters
       if candidate == str(CAR.VOLVO_V40):
