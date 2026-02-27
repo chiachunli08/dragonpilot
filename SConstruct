@@ -30,6 +30,12 @@ arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
 if platform.system() == "Darwin":
   arch = "Darwin"
   brew_prefix = subprocess.check_output(['brew', '--prefix'], encoding='utf8').strip()
+  ffmpeg_prefix = ""
+  for formula in ("ffmpeg@7", "ffmpeg"):
+    proc = subprocess.run(["brew", "--prefix", formula], capture_output=True, text=True)
+    if proc.returncode == 0:
+      ffmpeg_prefix = proc.stdout.strip()
+      break
 elif arch == "aarch64" and os.path.isfile('/TICI'):
   arch = "larch64"
 assert arch in [
@@ -105,8 +111,11 @@ if arch == "larch64":
   env.Append(CCFLAGS=arch_flags)
   env.Append(CXXFLAGS=arch_flags)
 elif arch == "Darwin":
+  ffmpeg_lib = [f"{ffmpeg_prefix}/lib"] if ffmpeg_prefix else []
+  ffmpeg_include = [f"{ffmpeg_prefix}/include"] if ffmpeg_prefix else []
   env.Append(LIBPATH=[
     f"{brew_prefix}/lib",
+    *ffmpeg_lib,
     f"{brew_prefix}/opt/openssl@3.0/lib",
     f"{brew_prefix}/opt/llvm/lib/c++",
     "/System/Library/Frameworks/OpenGL.framework/Libraries",
@@ -115,6 +124,7 @@ elif arch == "Darwin":
   env.Append(CXXFLAGS=["-DGL_SILENCE_DEPRECATION"])
   env.Append(CPPPATH=[
     f"{brew_prefix}/include",
+    *ffmpeg_include,
     f"{brew_prefix}/opt/openssl@3.0/include",
   ])
 else:
